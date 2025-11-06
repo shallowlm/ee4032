@@ -1,0 +1,21 @@
+{
+  "files": {
+    "main.css": "/ee4032/static/css/main.36e7ecf9.css",
+    "main.js": "/ee4032/static/js/main.6551df7f.js",
+    "static/js/206.81f26a7f.chunk.js": "/ee4032/static/js/206.81f26a7f.chunk.js",
+    "static/media/userInfo.jpeg": "/ee4032/static/media/userInfo.31ec24ac0b5d7cd081c4.jpeg",
+    "static/media/register.jpeg": "/ee4032/static/media/register.7682d2665721693829f8.jpeg",
+    "static/media/withdraw.jpeg": "/ee4032/static/media/withdraw.288dc1823eb3a9c3168e.jpeg",
+    "static/media/recharge.jpeg": "/ee4032/static/media/recharge.3b14cba11b4f4e24d247.jpeg",
+    "static/media/changePassword.jpeg": "/ee4032/static/media/changePassword.adb3f4744dfc2e7d00dd.jpeg",
+    "static/media/login.jpeg": "/ee4032/static/media/login.ba8798b8bf5dbeccfa4b.jpeg",
+    "static/media/game2.jpeg": "/ee4032/static/media/game2.ad93d58227cb348631df.jpeg",
+    "static/media/homepage.jpeg": "/ee4032/static/media/homepage.82b447e4d2cf1df561f2.jpeg",
+    "static/media/game1.jpeg": "/ee4032/static/media/game1.dc220a437c8f3b04ba3e.jpeg",
+    "index.html": "/ee4032/index.html"
+  },
+  "entrypoints": [
+    "static/css/main.36e7ecf9.css",
+    "static/js/main.6551df7f.js"
+  ]
+}
