@@ -17,7 +17,8 @@ const userVaultAddress = USER_VAULT_ADDRESS;
 const blackjackAddress = BLACKJACK_ADDRESS;
 
 // API endpoint
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://127.0.0.1:5000';
+//const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://127.0.0.1:5000';
+const API_BASE_URL = 'https://ee4032.onrender.com';
 
 // --- Helper Functions ---
 
@@ -80,6 +81,7 @@ function BlackjackGame({ onBack, onBalanceUpdate }) {
   const [isSplittable, setIsSplittable] = useState(false);
   const [canDouble, setCanDouble] = useState(false);
   const [isSplit, setIsSplit] = useState(false);
+  const [isAceSplit, setIsAceSplit] = useState(false); // <-- [FIX] State for Ace Split
   const [activeHand, setActiveHand] = useState(0);
   const [currentDeckRoot, setCurrentDeckRoot] = useState(null);
   const [lastGameProof, setLastGameProof] = useState(null);
@@ -99,6 +101,9 @@ function BlackjackGame({ onBack, onBalanceUpdate }) {
 
   /** Extract only valid card IDs from a card array. */
   const getCardIds = (cardArray) => cardArray.map(c => c.cardId).filter(id => id !== 99);
+  
+  /** Helper to create new card objects for reconciliation */
+  const createCardObj = (cardId) => ({ id: `card-${cardIdCounterRef.current++}`, cardId: cardId });
 
   // --- Contract & State Setup ---
   const setupContractsAndState = async (provider, account) => {
@@ -323,7 +328,9 @@ const handleStartGame = async () => {
     if (!vaultContract || !blackjackContract || !stakeAmount || !provider) { alert('Please ensure you are logged in, contracts are initialized, and bet amount is entered.'); return; }
     if (parseFloat(stakeAmount) <= 0) { alert('Bet amount must be greater than 0.'); return; }
 
-    setPlayerCards([]); setDealerCards([]); setHand1Cards([]); setHand2Cards([]); setIsSplit(false); setActiveHand(0); cardIdCounterRef.current = 0;
+    // [FIX] Reset AceSplit state
+    setPlayerCards([]); setDealerCards([]); setHand1Cards([]); setHand2Cards([]); setIsSplit(false); setIsAceSplit(false);
+    setActiveHand(0); cardIdCounterRef.current = 0;
     setGameMessage(''); setIsPlayerTurn(false); setCurrentRoundId(null); setTxStatus('Processing game...'); setCurrentDeckRoot(null); setLastGameProof(null); setLastPayout(null);
 
     setIsLoading(true);
@@ -428,33 +435,54 @@ const handleHit = async () => {
         const handToHit = isSplit ? activeHand : 0;
         const response = await fetch(`${API_BASE_URL}/api/hit`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ playerAddress: account, hand: handToHit }), });
         if (!response.ok) { const err = await response.json(); throw new Error(`Hit API error: ${err.error || response.statusText}`); }
-        const { newCard, hand } = await response.json();
-        const newCardObj = { id: `card-${cardIdCounterRef.current++}`, cardId: newCard.cardId };
+        
+        // --- [FIX] Trust backend state (Bug 3) ---
+        const { newCard, hand, newHandCards: backendCardIds } = await response.json();
+        
         let newHandCards;
         let handLabel = "Your hand";
 
         if (isSplit) {
             if (activeHand === 1) {
-                newHandCards = [...hand1Cards, newCardObj];
+                // Reconcile Hand 1
+                newHandCards = backendCardIds.map((cardId, index) => 
+                    (hand1Cards[index] && hand1Cards[index].cardId === cardId) 
+                    ? hand1Cards[index] // Reuse existing object
+                    : createCardObj(cardId) // Create new object
+                );
                 setHand1Cards(newHandCards);
                 handLabel = "Hand 1";
             } else {
-                newHandCards = [...hand2Cards, newCardObj];
+                // Reconcile Hand 2
+                newHandCards = backendCardIds.map((cardId, index) => 
+                    (hand2Cards[index] && hand2Cards[index].cardId === cardId) 
+                    ? hand2Cards[index] 
+                    : createCardObj(cardId)
+                );
                 setHand2Cards(newHandCards);
                 handLabel = "Hand 2";
             }
         } else {
-            newHandCards = [...playerCards, newCardObj];
+            // Reconcile main hand
+            newHandCards = backendCardIds.map((cardId, index) => 
+                (playerCards[index] && playerCards[index].cardId === cardId) 
+                ? playerCards[index] 
+                : createCardObj(cardId)
+            );
             setPlayerCards(newHandCards);
         }
+        // --- [END FIX] ---
 
-        const total = getHandTotal(getCardIds(newHandCards));
+        const total = getHandTotal(getCardIds(newHandCards)); // Total is now based on reconciled state
 
         if (total > 21) {
             setGameMessage(`${handLabel} busts! Total: ${total}.`);
             if (isSplit && activeHand === 1) {
                 showTempStatus(`${handLabel} busts, switching to Hand 2...`);
-                setTimeout(() => switchToHand2(), 1500);
+                // [BUG FIX] Pass an empty object to satisfy switchToHand2's new signature
+                // We know it's a bust, so we just need to trigger the switch.
+                // We will call handleStand(1) to get the *real* data.
+                setTimeout(() => handleStand(), 1500); // <-- This will call /api/stand for hand 1
             } else {
                 showTempStatus(`${handLabel} busts, processing...`);
                 setTimeout(() => handleStand(total), 1500);
@@ -474,37 +502,63 @@ const handleHit = async () => {
     }
 };
 
-const switchToHand2 = async () => {
-    setIsPlayerTurn(false);
+// --- [BUG FIX 1 & 2] ---
+// `switchToHand2` is now a pure state-updater. It no longer fetches.
+// It receives `apiData` directly from `handleStand`.
+const switchToHand2 = async (apiData) => {
     setTxStatus('Switching to Hand 2...');
-    setIsLoading(true);
-    try {
-        const response = await fetch(`${API_BASE_URL}/api/stand`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ playerAddress: account, hand: 1 }), });
-        if (!response.ok) { const err = await response.json(); throw new Error(`Stand API (hand 1) error: ${err.error || response.statusText}`); }
-        const apiData = await response.json();
 
-        if (!apiData.handSwitched) throw new Error("API failed to switch hand");
+    if (!apiData.handSwitched) {
+        throw new Error("Logic Error: API failed to switch hand");
+    }
 
-        setActiveHand(apiData.activeHand);
-        const baseHand2Card = hand2Cards.length > 0 ? hand2Cards[0] : null;
-        const h2 = apiData.newHand2Cards.map((cardId, index) =>
-            index === 0 && baseHand2Card ? baseHand2Card : { id: `card-${cardIdCounterRef.current++}`, cardId: cardId }
-        );
-        setHand2Cards(h2);
-        const hand2Total = getHandTotal(getCardIds(h2));
+    setActiveHand(apiData.activeHand);
+    
+    // Get the first card, which was already in state
+    const baseHand2Card = hand2Cards.length > 0 ? hand2Cards[0] : null;
+    let finalH2Cards = [];
+
+    if (baseHand2Card && apiData.newHand2Cards[0] === baseHand2Card.cardId) {
+        // This is the expected path.
+        // `newHand2Cards` from backend is [originalCardId, newCardId]
+        finalH2Cards = [
+            baseHand2Card, // Reuse existing object
+            createCardObj(apiData.newHand2Cards[1]) // Create new object for new card
+        ];
+    } else {
+        // Fallback in case state is weird, just use what the backend said
+        console.warn("Hand 2 state mismatch, rebuilding from backend data.");
+        finalH2Cards = apiData.newHand2Cards.map(createCardObj);
+    }
+
+    setHand2Cards(finalH2Cards);
+    const hand2Total = getHandTotal(getCardIds(finalH2Cards));
+    
+    // --- [FIX] Handle Ace Split rule (Bug 2) ---
+    if (isAceSplit) {
+        setGameMessage(`Split Aces. Hand 2 (Total: ${hand2Total}). Auto-standing...`);
+        showTempStatus('Play Hand 2. Auto-standing.');
+        setIsPlayerTurn(false);
+        setIsLoading(true);
+        setIsAceSplit(false); // Reset state
+        setTimeout(() => handleStand(), 1500); // Auto-stand to settle
+    }
+    // --- [END FIX] ---
+    else if (hand2Total === 21) {
+        setIsLoading(true);
+        showTempStatus('Hand 2 has 21, auto standing...');
+        setTimeout(() => handleStand(), 1500);
+    } else if (hand2Total > 21) { 
+        setIsLoading(true);
+        setGameMessage(`Your turn: Hand 2 (Total: ${hand2Total}). Bust!`);
+        showTempStatus('Hand 2 busts, processing...');
+        setTimeout(() => handleStand(hand2Total), 1500); 
+    } else {
         setGameMessage(`Your turn: Hand 2 (Total: ${hand2Total}). Choose your action.`);
         showTempStatus('Play Hand 2.');
+        // Note: We don't setCanDouble(true) here because the backend /api/double
+        // does not currently support doubling split hands.
         setIsPlayerTurn(true);
-        setIsLoading(false);
-
-        if (hand2Total === 21) {
-            setIsLoading(true);
-            showTempStatus('Hand 2 has 21, auto standing...');
-            setTimeout(() => handleStand(), 1500);
-        }
-    } catch (error) {
-        console.error('Switch to hand 2 failed:', error);
-        showTempStatus(`Switch hand failed: ${error.message}`, true);
         setIsLoading(false);
     }
 };
@@ -572,26 +626,52 @@ const handleSettle = async (settlementData) => {
         console.error('Settle failed:', error);
         const reason = error.reason || error.data?.message || error.message;
         setIsLoading(false);
-        showTempStatus(`Settlement failed: ${reason}`, true);
-        alert(`Settlement failed: ${reason}`);
+        showTempStatus(`Settle failed: ${reason}`, true);
+        alert(`Settle failed: ${reason}`);
         fetchUserBalance(vaultContract, account);
         fetchPoolBalance();
-        setIsPlayerTurn(true);
+        // Do not set isPlayerTurn(true) here, game is over.
     }
 };
 
+// --- [BUG FIX 1 & 2] ---
+// `handleStand` is now the single entry point for all stand actions.
+// It handles API calls and delegates to `switchToHand2` or `handleSettle`.
+// The `catch` block is fixed to prevent re-enabling controls on error.
 const handleStand = async (bustTotal = null) => {
-    if (!account || !currentRoundId || isLoading) return;
+    // Prevent multiple clicks
+    if (isLoading && bustTotal === null) return; 
+
+    if (!account || !currentRoundId) {
+        console.warn("handleStand called without account or roundId");
+        return;
+    }
+
     setIsPlayerTurn(false);
+    setIsLoading(true); // Always set loading
     const handToStand = isSplit ? activeHand : 0;
     setTxStatus(`Standing on ${isSplit ? `Hand ${handToStand}` : 'Main hand'}...`);
+
     try {
-        const response = await fetch(`${API_BASE_URL}/api/stand`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ playerAddress: account, hand: handToStand }), });
-        if (!response.ok) { const err = await response.json(); throw new Error(`Stand API error: ${err.error || response.statusText}`); }
+        const response = await fetch(`${API_BASE_URL}/api/stand`, { 
+            method: 'POST', 
+            headers: { 'Content-Type': 'application/json' }, 
+            body: JSON.stringify({ playerAddress: account, hand: handToStand }), 
+        });
+
+        if (!response.ok) { 
+            const err = await response.json(); 
+            const errorMsg = err.error || response.statusText;
+            throw new Error(`Stand API error: ${errorMsg}`); 
+        }
+
         const apiData = await response.json();
-        if (apiData.handSwitched) { 
-            await switchToHand2();
+
+        if (apiData.handSwitched) {
+            // This was Hand 1 standing. Pass data to switchToHand2.
+            await switchToHand2(apiData);
         } else { 
+            // This was Hand 0 or Hand 2 standing. Time to settle.
             const { settlementData, dealerFullHand } = apiData;
             const baseDealerCard = dealerCards.length > 0 ? dealerCards[0] : null;
             const newDealerCards = dealerFullHand.map((cardId, index) =>
@@ -604,6 +684,7 @@ const handleStand = async (bustTotal = null) => {
 
             if (isSplit) {
                 const h1t = getHandTotal(getCardIds(hand1Cards));
+                // Use bustTotal if it was passed (e.g., from Hand 2 busting)
                 const h2t = (activeHand === 2 && typeof bustTotal === 'number') ? bustTotal : getHandTotal(getCardIds(hand2Cards));
                 const r1 = getHandResult(h1t, dealerTotal); 
                 const r2 = getHandResult(h2t, dealerTotal); 
@@ -619,13 +700,18 @@ const handleStand = async (bustTotal = null) => {
         }
     } catch (error) {
         console.error('Stand failed:', error);
-        showTempStatus(`Stand failed: ${error.message}`, true);
-        setIsPlayerTurn(true);
+        const errorMsg = error.message || "Unknown error";
+        showTempStatus(`Stand failed: ${errorMsg}`, true);
+        alert(`A critical error occurred: ${errorMsg}\nThe game will now stop. Please start a new game.`);
+        
+        // [CRITICAL FIX]
+        // DO NOT set isPlayerTurn(true). This stops the infinite loop.
         setIsLoading(false);
     }
 };
 
 const handleDouble = async () => { 
+  // We keep `isSplit` check here because the backend /api/double does not support it
   if (!vaultContract || !currentStake || !isPlayerTurn || !canDouble || isSplit || isLoading || !provider) return;
   setIsLoading(true);
   setIsPlayerTurn(false);
@@ -675,7 +761,7 @@ const handleDouble = async () => {
       console.error('Double failed:', error);
       const reason = error.reason || error.data?.message || error.message;
       setIsLoading(false); 
-      setIsPlayerTurn(true); 
+      // Do not set isPlayerTurn(true) if settlement failed
       showTempStatus(`Double failed: ${reason}`, true); 
       alert(`Double failed: ${reason}`);
       if (pushSucceeded) {
@@ -695,6 +781,10 @@ const handleSplit = async () => {
   let pushSucceeded = false;
   let stakeWei;
   try {
+      // --- [FIX] Check if splitting Aces ---
+      const isAces = (playerCards[0].cardId % 13 === 0);
+      // --- [END FIX] ---
+
       stakeWei = ethers.parseEther(currentStake);
       const signer = await provider.getSigner();
       const vaultWithSigner = vaultContract.connect(signer);
@@ -719,26 +809,52 @@ const handleSplit = async () => {
         throw new Error(`Split API error: ${err.error || response.statusText}`); 
       }
       const { hand1, hand2 } = await response.json();
+      
+      // --- [BUG FIX 3] ---
+      // Validate backend response to prevent key errors
+      if (!hand1 || hand1.length < 2 || typeof hand1[1] === 'undefined' || !hand2 || hand2.length < 1) {
+          throw new Error("Split API error: Invalid response from server.");
+      }
+      
       setIsSplit(true);
-      const newHand1 = [ playerCards[0], { id: `card-${cardIdCounterRef.current++}`, cardId: hand1[1] } ];
-      const newHand2 = [ playerCards[1] ];
+      setIsAceSplit(isAces); // <-- [FIX] Set Ace Split state
+      const newHand1 = [
+        { ...playerCards[0], id: `card-${cardIdCounterRef.current++}` }, // Reuse original card 1
+        createCardObj(hand1[1]) // Create new card 2
+      ];
+      const newHand2 = [
+        { ...playerCards[1], id: `card-${cardIdCounterRef.current++}` } // Reuse original card 2
+      ];
       setHand1Cards(newHand1);
       setHand2Cards(newHand2);
       setPlayerCards([]); 
 
       setActiveHand(1); 
       setIsSplittable(false); 
-      setCanDouble(false);
+      setCanDouble(false); // Keep as false (backend limitation)
       const hand1Total = getHandTotal(getCardIds(newHand1));
-      setGameMessage(`Split successful! Playing Hand 1 (Total: ${hand1Total}). Choose your action:`);
-      showTempStatus('Play Hand 1.');
-      setIsPlayerTurn(true);
-      setIsLoading(false); 
-      if (hand1Total === 21) {
+      
+      // --- [FIX] Handle Ace Split and 21 (Bug 2) ---
+      if (isAces) {
+          setGameMessage(`Split Aces. Hand 1 (Total: ${hand1Total}). Auto-standing...`);
+          showTempStatus('Play Hand 1. Auto-standing.');
+          setIsPlayerTurn(false);
+          setIsLoading(true);
+          setTimeout(() => handleStand(), 1500); // Auto-stand (will trigger switchToHand2)
+      } 
+      else if (hand1Total === 21) {
         setIsLoading(true); 
         showTempStatus('Hand 1 has 21 points, auto standing...'); 
         setTimeout(() => handleStand(), 1500);
       }
+      else {
+        setGameMessage(`Split successful! Playing Hand 1 (Total: ${hand1Total}). Choose your action:`);
+        showTempStatus('Play Hand 1.');
+        setIsPlayerTurn(true);
+        setIsLoading(false); 
+      }
+      // --- [END FIX] ---
+
   } catch (error) {
       console.error('Split failed:', error);
       const reason = error.reason || error.data?.message || error.message;
@@ -789,6 +905,7 @@ const handleAccountsChangedInternal = (accounts) => {
       setIsPlayerTurn(false); 
       setCurrentStake(null); 
       setIsSplit(false); 
+      setIsAceSplit(false); // <-- [FIX] Reset Ace Split state
       setActiveHand(0); 
       setLastGameProof(null); 
       setCurrentDeckRoot(null); 
@@ -1089,6 +1206,7 @@ return (
                 <button onClick={handleStand} disabled={!isPlayerTurn || isLoading}>Stand</button>
                 <button
                   onClick={handleDouble}
+                  // Keep `isSplit` check because backend /api/double doesn't support it
                   disabled={!isPlayerTurn || !canDouble || isSplit || isLoading}
                   style={ (isPlayerTurn && canDouble && !isSplit && !isLoading) ? {backgroundColor: '#ffc107', color: '#212529'} : {} }
                 >Double</button>

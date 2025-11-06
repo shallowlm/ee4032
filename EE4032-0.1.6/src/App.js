@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
+// import { BrowserRouter as Router, Route, Routes, Navigate, useNavigate } from 'react-router-dom';
 import { HashRouter as Router, Route, Routes, Navigate, useNavigate } from 'react-router-dom';
+
 import LoggedOutHome from './LoggedOutHome';
 import LoggedInHome from './LoggedInHome';
 import LoginPage from './login/LoginPage';
@@ -172,20 +174,11 @@ const AppContent = () => {
 
 
 const App = () => {
-    const getBasename = () => {
-        // 本地开发环境（npm start）：basename 设为 "/"（无前缀）
-        if (process.env.NODE_ENV === 'development') {
-          return '/'; 
-        }
-        // 生产环境（部署后）：basename 设为 "/ee4032/"（必须带末尾的 "/"！避免匹配问题）
-        return '/ee4032/'; 
-      };
-    
-      return (
-        <Router basename={getBasename()}> 
-          <AppContent />
-        </Router>
-      );
+    return (
+        <Router>
+        <AppContent />
+      </Router>
+    );
 }
 
 export default App;

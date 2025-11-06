@@ -1,12 +1,20 @@
 /* ==================================================================
- * BlackjackGame.css - Refactored for Professional Layout
- * (Based on App1.css)
+ * BlackjackGame.css - v2 (Patched & Enhanced)
+ *
+ * 1. [FIX] "Back" 按钮悬停抖动
+ * 2. [NEW] 为 ".tx-status.loading" 添加渐变闪烁效果
+ * 3. [NEW] 引入专业字体 (Lato & Merriweather)
+ * 4. [NEW] 优化游戏桌面和标签样式
  * ================================================================== */
+
+/* [NEW] 引入 Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Lato:wght@400;700&family=Merriweather:wght@700&display=swap');
 
 /* --- Basic & Layout --- */
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+  /* [NEW] 使用更专业的字体 */
+  font-family: 'Lato', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
     'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
     sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -45,7 +53,7 @@ body {
   position: absolute; /* Position relative to title-bar */
   left: 0; /* Align left */
   top: 50%;
-  transform: translateY(-50%);
+  transform: translateY(-50%); /* [FIX] 基础状态 */
   background-color: #6c757d;
   color: white;
   padding: 8px 16px;
@@ -53,16 +61,20 @@ body {
   border-radius: 5px;
   border: none;
   cursor: pointer;
-  transition: background-color 0.2s;
+  /* [FIX] 将 transform 添加到 transition 中 */
+  transition: background-color 0.2s, transform 0.1s ease;
 }
 .back-button:hover:not(:disabled) {
   background-color: #5a6268;
+  /* [FIX] 明确定义 hover 时的 transform，结合居中和"上浮"效果 */
+  transform: translateY(-50%) translateY(-1px);
 }
 
 .app-top-bar h1 {
   margin: 0;
   color: #61dafb;
   font-size: 1.8rem;
+  font-family: 'Merriweather', 'Helvetica Neue', sans-serif; /* [NEW] */
 }
 
 .account-info {
@@ -173,6 +185,28 @@ body {
   border: 1px solid #ffc107;
   font-size: 1.5rem;
   margin: 0;
+  transition: all 0.3s ease; /* [NEW] */
+}
+
+/* [NEW] 渐变闪烁加载效果 */
+.tx-status.loading {
+  color: #fff;
+  font-weight: bold;
+  border-color: #007bff;
+  background: linear-gradient(
+    -45deg,
+    #282c34,
+    #007bff,
+    #282c34,
+    #007bff
+  );
+  background-size: 400% 400%;
+  animation: shimmer 2s linear infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 100% 50%; }
 }
 
 /* --- Deposit/Withdraw Controls --- */
@@ -238,6 +272,7 @@ body {
 .connect-wallet-container h2 {
   margin-top: 0;
   color: #61dafb;
+  font-family: 'Merriweather', 'Helvetica Neue', sans-serif; /* [NEW] */
 }
 
 .connect-wallet-container p {
@@ -264,7 +299,8 @@ body {
   max-width: 1000px;
   height: 65vh;
   max-height: 550px;
-  background: #004d00;
+  /* [NEW] 添加渐变，使其看起来更像"聚光灯" */
+  background: radial-gradient(circle, #006b00 0%, #004d00 70%);
   border: 15px solid #5C3317;
   border-radius: 15px;
   box-shadow: 0 10px 20px rgba(0, 0, 0, 0.4),
@@ -317,13 +353,20 @@ body {
   transform: translateX(-50%);
   color: #fff;
   font-weight: bold;
-  font-size: 1rem;
-  text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.7);
+  font-size: 1.1rem; /* [NEW] 稍大一点 */
+  text-shadow: 1px 1px 3px rgba(0, 0, 0, 1); /* [NEW] 更强的阴影 */
   white-space: nowrap;
-  background-color: rgba(0, 0, 0, 0.4);
-  padding: 3px 8px;
-  border-radius: 4px;
+  background-color: rgba(0, 0, 0, 0.5); /* [NEW] 更深的背景 */
+  padding: 4px 10px; /* [NEW] 更多内边距 */
+  border-radius: 6px; /* [NEW] */
 }
+
+/* [NEW] 高亮当前玩家的手牌 */
+.hand-label.active {
+  color: #ffc107;
+  box-shadow: 0 0 10px rgba(255, 193, 7, 0.7);
+}
+
 
 /* --- Footer & Action Area --- */
 .app-footer {
@@ -376,12 +419,13 @@ body {
 .welcome-mat img {
   width: 120px;
   height: 120px;
-  opacity: 0.1;
+  opacity: 0.2; /* [NEW] 稍微清晰一点 */
 }
 .welcome-mat h2 {
+  font-family: 'Merriweather', 'Helvetica Neue', sans-serif; /* [NEW] */
   font-size: 3rem;
   font-weight: bold;
-  color: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.15); /* [NEW] 稍微清晰一点 */
   text-shadow: 2px 2px 5px rgba(0,0,0,0.5);
   margin-top: 10px;
 }
@@ -405,6 +449,7 @@ body {
   font-weight: bold;
   text-align: center;
   margin-bottom: 10px;
+  min-height: 1.5rem; /* [NEW] 防止消息消失时布局抖动 */
 }
 
 /* --- Deck Root Display --- */
@@ -508,6 +553,7 @@ body {
 .proof-container h4 {
   margin-top: 0;
   color: #ffc107;
+  font-family: 'Merriweather', 'Helvetica Neue', sans-serif; /* [NEW] */
 }
 .proof-container span {
   color: #ffc107;
@@ -557,6 +603,7 @@ button:disabled {
   background-color: #5a6268;
   color: #ccc;
   cursor: not-allowed;
+  transform: none; /* [NEW] 禁用时不要上浮 */
 }
 input {
   padding: 10px 12px;
@@ -604,9 +651,12 @@ input:focus {
   .hand-label { font-size: 1rem; top: -25px; }
   .action-buttons button { padding: 12px 20px; font-size: 1rem; }
   .back-button {
-    position: static;
-    transform: none;
+    position: static; /* [FIX] 在移动设备上，取消绝对定位 */
+    transform: none; /* [FIX] 取消 transform */
     margin-right: 15px;
+  }
+  .back-button:hover:not(:disabled) {
+    transform: translateY(-1px); /* [FIX] 恢复正常的悬停 */
   }
   .title-bar {
     justify-content: flex-start;
